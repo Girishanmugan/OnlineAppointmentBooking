@@ -1,12 +1,15 @@
+// src/components/Auth/Register.js
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import toast from 'react-hot-toast';
 
 const Register = () => {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
+    confirmPassword: '',
     role: 'user',
     specialty: '',
     experience: ''
@@ -14,20 +17,6 @@ const Register = () => {
   const [loading, setLoading] = useState(false);
   const { register } = useAuth();
   const navigate = useNavigate();
-
-  // Define the list of specialties
-  const specialties = [
-    '',
-    'Dentist',
-    'Cardiologist',
-    'Orthopedic',
-    'Dermatologist',
-    'Pediatrician',
-    'Psychiatrist',
-    'Gynecologist',
-    'Neurologist',
-    'General Practitioner'
-  ];
 
   const handleChange = (e) => {
     setFormData({
@@ -38,12 +27,68 @@ const Register = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Validation
+    if (!formData.name || !formData.email || !formData.password) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    if (!formData.email.includes('@')) {
+      toast.error('Please enter a valid email address');
+      return;
+    }
+
+    if (formData.password.length < 6) {
+      toast.error('Password must be at least 6 characters long');
+      return;
+    }
+
+    if (formData.password !== formData.confirmPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+
+    if (formData.role === 'provider' && !formData.specialty) {
+      toast.error('Please enter your specialty');
+      return;
+    }
+
     setLoading(true);
+    
     try {
-      const user = await register(formData);
-      navigate(`/${user.role}-dashboard`);
+      console.log('Attempting registration with:', { 
+        name: formData.name, 
+        email: formData.email, 
+        role: formData.role 
+      });
+      
+      // Prepare data for registration
+      const registrationData = {
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+        role: formData.role,
+        ...(formData.role === 'provider' && {
+          specialty: formData.specialty,
+          experience: parseInt(formData.experience) || 0
+        })
+      };
+
+      const user = await register(registrationData);
+      console.log('Registration successful:', user);
+      
+      // Navigate based on user role
+      if (user.role === 'provider') {
+        navigate('/provider-dashboard');
+      } else {
+        navigate('/user-dashboard');
+      }
+      
     } catch (error) {
       console.error('Registration error:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Registration failed. Please try again.';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -56,9 +101,10 @@ const Register = () => {
           <h2>Create Account</h2>
           <p>Join our appointment booking platform</p>
         </div>
+        
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="form-group">
-            <label htmlFor="name">Full Name</label>
+            <label htmlFor="name">Full Name *</label>
             <input
               type="text"
               id="name"
@@ -67,10 +113,12 @@ const Register = () => {
               onChange={handleChange}
               required
               placeholder="Enter your full name"
+              disabled={loading}
             />
           </div>
+          
           <div className="form-group">
-            <label htmlFor="email">Email</label>
+            <label htmlFor="email">Email Address *</label>
             <input
               type="email"
               id="email"
@@ -79,10 +127,12 @@ const Register = () => {
               onChange={handleChange}
               required
               placeholder="Enter your email"
+              disabled={loading}
             />
           </div>
+          
           <div className="form-group">
-            <label htmlFor="password">Password</label>
+            <label htmlFor="password">Password *</label>
             <input
               type="password"
               id="password"
@@ -91,40 +141,56 @@ const Register = () => {
               onChange={handleChange}
               required
               placeholder="Enter your password"
+              disabled={loading}
               minLength={6}
             />
           </div>
+          
           <div className="form-group">
-            <label htmlFor="role">Role</label>
+            <label htmlFor="confirmPassword">Confirm Password *</label>
+            <input
+              type="password"
+              id="confirmPassword"
+              name="confirmPassword"
+              value={formData.confirmPassword}
+              onChange={handleChange}
+              required
+              placeholder="Confirm your password"
+              disabled={loading}
+              minLength={6}
+            />
+          </div>
+          
+          <div className="form-group">
+            <label htmlFor="role">I am a *</label>
             <select
               id="role"
               name="role"
               value={formData.role}
               onChange={handleChange}
               required
+              disabled={loading}
             >
               <option value="user">Patient</option>
               <option value="provider">Healthcare Provider</option>
             </select>
           </div>
+          
           {formData.role === 'provider' && (
             <>
               <div className="form-group">
-                <label htmlFor="specialty">Specialty</label>
-                <select
+                <label htmlFor="specialty">Specialty *</label>
+                <input
+                  type="text"
                   id="specialty"
                   name="specialty"
                   value={formData.specialty}
                   onChange={handleChange}
-                  required
-                >
-                  {specialties.map((spec, index) => (
-                    <option key={index} value={spec}>
-                      {spec === '' ? 'Select your specialty' : spec}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="e.g., Dentist, Cardiologist, General Practice"
+                  disabled={loading}
+                />
               </div>
+              
               <div className="form-group">
                 <label htmlFor="experience">Years of Experience</label>
                 <input
@@ -134,11 +200,14 @@ const Register = () => {
                   value={formData.experience}
                   onChange={handleChange}
                   min="0"
+                  max="50"
                   placeholder="Years of experience"
+                  disabled={loading}
                 />
               </div>
             </>
           )}
+          
           <button 
             type="submit" 
             className="btn btn-primary"
@@ -147,6 +216,7 @@ const Register = () => {
             {loading ? 'Creating Account...' : 'Create Account'}
           </button>
         </form>
+        
         <div className="auth-footer">
           <p>
             Already have an account? 

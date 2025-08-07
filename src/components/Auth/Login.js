@@ -1,6 +1,8 @@
+// src/components/Auth/Login.js
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import toast from 'react-hot-toast';
 
 const Login = () => {
   const [formData, setFormData] = useState({
@@ -20,12 +22,36 @@ const Login = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Basic validation
+    if (!formData.email || !formData.password) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    if (!formData.email.includes('@')) {
+      toast.error('Please enter a valid email address');
+      return;
+    }
+
     setLoading(true);
+    
     try {
+      console.log('Attempting login with:', { email: formData.email });
       const user = await login(formData.email, formData.password);
-      navigate(`/${user.role}-dashboard`);
+      console.log('Login successful:', user);
+      
+      // Navigate based on user role
+      if (user.role === 'provider') {
+        navigate('/provider-dashboard');
+      } else {
+        navigate('/user-dashboard');
+      }
+      
     } catch (error) {
       console.error('Login error:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Login failed. Please try again.';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -38,9 +64,10 @@ const Login = () => {
           <h2>Welcome Back</h2>
           <p>Sign in to your account</p>
         </div>
+        
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="form-group">
-            <label htmlFor="email">Email</label>
+            <label htmlFor="email">Email Address</label>
             <input
               type="email"
               id="email"
@@ -49,8 +76,10 @@ const Login = () => {
               onChange={handleChange}
               required
               placeholder="Enter your email"
+              disabled={loading}
             />
           </div>
+          
           <div className="form-group">
             <label htmlFor="password">Password</label>
             <input
@@ -61,8 +90,11 @@ const Login = () => {
               onChange={handleChange}
               required
               placeholder="Enter your password"
+              disabled={loading}
+              minLength={6}
             />
           </div>
+          
           <button 
             type="submit" 
             className="btn btn-primary"
@@ -71,6 +103,7 @@ const Login = () => {
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
+        
         <div className="auth-footer">
           <p>
             Don't have an account? 

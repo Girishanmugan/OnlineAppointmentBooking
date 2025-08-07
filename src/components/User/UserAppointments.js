@@ -1,13 +1,16 @@
+// src/components/User/UserAppointments.js
 import React, { useState, useEffect } from 'react';
 import Layout from '../Layout/Layout';
+import Loading from '../Common/Loading';
+import Modal from '../Common/Modal';
 import { appointmentService } from '../../services/appointmentService';
 import { toast } from 'react-toastify';
-import Loading from '../Common/Loading';
 
 const UserAppointments = () => {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
+  const [cancelModal, setCancelModal] = useState({ show: false, appointmentId: null });
 
   useEffect(() => {
     fetchAppointments();
@@ -15,47 +18,61 @@ const UserAppointments = () => {
 
   const fetchAppointments = async () => {
     try {
+      setLoading(true);
       const response = await appointmentService.getUserAppointments();
       setAppointments(response.data || []);
     } catch (error) {
+      toast.error('Failed to load appointments');
       console.error('Error fetching appointments:', error);
-      toast.error('Failed to fetch appointments');
     } finally {
       setLoading(false);
     }
   };
 
   const handleCancelAppointment = async (appointmentId) => {
-    if (window.confirm('Are you sure you want to cancel this appointment?')) {
-      try {
-        await appointmentService.cancelAppointment(appointmentId);
-        toast.success('Appointment cancelled successfully');
-        fetchAppointments();
-      } catch (error) {
-        toast.error('Failed to cancel appointment');
-      }
+    try {
+      await appointmentService.cancelAppointment(appointmentId);
+      toast.success('Appointment cancelled successfully');
+      setCancelModal({ show: false, appointmentId: null });
+      fetchAppointments(); // Refresh list
+    } catch (error) {
+      toast.error('Failed to cancel appointment');
+      console.error('Error cancelling appointment:', error);
     }
   };
 
   const filteredAppointments = appointments.filter(appointment => {
-    if (filter === 'all') return true;
-    return appointment.status === filter;
+    const now = new Date();
+    const aptDate = new Date(appointment.appointmentDate);
+    
+    switch (filter) {
+      case 'upcoming':
+        return aptDate >= now && appointment.status !== 'cancelled';
+      case 'past':
+        return aptDate < now || appointment.status === 'completed';
+      case 'cancelled':
+        return appointment.status === 'cancelled';
+      default:
+        return true;
+    }
   });
 
-  if (loading) {
+  const canCancelAppointment = (appointment) => {
+    const now = new Date();
+    const aptDate = new Date(appointment.appointmentDate);
+    const hoursDiff = (aptDate - now) / (1000 * 60 * 60);
+    
     return (
-      <Layout>
-        <Loading />
-      </Layout>
-    );
-  }
+      appointment.status === 'pending' || appointment.status === 'confirmed'
+    ) && hoursDiff > 24; // Can cancel if more than 24 hours away
+  };
 
   return (
     <Layout>
       <div className="appointments-page">
         <div className="page-header">
           <h1>My Appointments</h1>
-          <p>View and manage your scheduled appointments</p>
+          <p>Manage your scheduled appointments</p>
         </div>
 
         {/* Filter Tabs */}
@@ -64,80 +81,130 @@ const UserAppointments = () => {
             className={`tab ${filter === 'all' ? 'active' : ''}`}
             onClick={() => setFilter('all')}
           >
-            All
+            All ({appointments.length})
           </button>
           <button
-            className={`tab ${filter === 'pending' ? 'active' : ''}`}
-            onClick={() => setFilter('pending')}
+            className={`tab ${filter === 'upcoming' ? 'active' : ''}`}
+            onClick={() => setFilter('upcoming')}
           >
-            Pending
+            Upcoming ({appointments.filter(apt => {
+              const now = new Date();
+              const aptDate = new Date(apt.appointmentDate);
+              return aptDate >= now && apt.status !== 'cancelled';
+            }).length})
           </button>
           <button
-            className={`tab ${filter === 'confirmed' ? 'active' : ''}`}
-            onClick={() => setFilter('confirmed')}
+            className={`tab ${filter === 'past' ? 'active' : ''}`}
+            onClick={() => setFilter('past')}
           >
-            Confirmed
-          </button>
-          <button
-            className={`tab ${filter === 'completed' ? 'active' : ''}`}
-            onClick={() => setFilter('completed')}
-          >
-            Completed
+            Past ({appointments.filter(apt => {
+              const now = new Date();
+              const aptDate = new Date(apt.appointmentDate);
+              return aptDate < now || apt.status === 'completed';
+            }).length})
           </button>
           <button
             className={`tab ${filter === 'cancelled' ? 'active' : ''}`}
             onClick={() => setFilter('cancelled')}
           >
-            Cancelled
+            Cancelled ({appointments.filter(apt => apt.status === 'cancelled').length})
           </button>
         </div>
 
         {/* Appointments List */}
-        <div className="appointments-list">
-          {filteredAppointments.length > 0 ? (
-            filteredAppointments.map(appointment => (
-              <div key={appointment._id} className="appointment-card">
-                <div className="appointment-info">
-                  <h3>{appointment.provider?.user?.name}</h3>
-                  <p className="appointment-specialty">
-                    {appointment.provider?.specialty}
-                  </p>
-                  <p className="appointment-date">
-                    {new Date(appointment.appointmentDate).toLocaleDateString()}
-                  </p>
-                  <p className="appointment-time">
-                    {appointment.timeSlot?.start} - {appointment.timeSlot?.end}
-                  </p>
-                  <p className="appointment-service">
-                    Service: {appointment.service}
-                  </p>
-                  {appointment.notes && (
-                    <p className="appointment-notes">
-                      Notes: {appointment.notes}
-                    </p>
-                  )}
+        <div className="appointments-section">
+          {loading ? (
+            <Loading />
+          ) : filteredAppointments.length > 0 ? (
+            <div className="appointments-list">
+              {filteredAppointments.map(appointment => (
+                <div key={appointment._id} className="appointment-card">
+                  <div className="appointment-main">
+                    <div className="appointment-info">
+                      <h3>{appointment.provider?.user?.name}</h3>
+                      <p className="specialty">{appointment.provider?.specialty}</p>
+                      <p className="service">{appointment.service?.name}</p>
+                      
+                      <div className="appointment-datetime">
+                        <span className="date">
+                          📅 {new Date(appointment.appointmentDate).toLocaleDateString()}
+                        </span>
+                        <span className="time">
+                          🕒 {appointment.timeSlot?.start} - {appointment.timeSlot?.end}
+                        </span>
+                      </div>
+
+                      {appointment.notes && (
+                        <div className="appointment-notes">
+                          <strong>Notes:</strong> {appointment.notes}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="appointment-status">
+                      <span className={`status-badge ${appointment.status}`}>
+                        {appointment.status}
+                      </span>
+                      <div className="appointment-actions">
+                        {canCancelAppointment(appointment) && (
+                          <button
+                            onClick={() => setCancelModal({ 
+                              show: true, 
+                              appointmentId: appointment._id 
+                            })}
+                            className="btn btn-outline btn-danger"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="appointment-status">
-                  <span className={`status-badge ${appointment.status}`}>
-                    {appointment.status}
-                  </span>
-                  {appointment.status === 'pending' && (
-                    <button
-                      onClick={() => handleCancelAppointment(appointment._id)}
-                      className="btn btn-danger btn-sm"
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))
+              ))}
+            </div>
           ) : (
             <div className="empty-state">
-              <p>No appointments found</p>
+              <h3>No appointments found</h3>
+              <p>
+                {filter === 'all' 
+                  ? "You haven't booked any appointments yet."
+                  : `No ${filter} appointments found.`
+                }
+              </p>
+              <a href="/providers" className="btn btn-primary">
+                Book an Appointment
+              </a>
             </div>
           )}
         </div>
+
+        {/* Cancel Confirmation Modal */}
+        <Modal
+          isOpen={cancelModal.show}
+          onClose={() => setCancelModal({ show: false, appointmentId: null })}
+          title="Cancel Appointment"
+        >
+          <div className="modal-content">
+            <p>Are you sure you want to cancel this appointment?</p>
+            <p className="text-small text-muted">This action cannot be undone.</p>
+            
+            <div className="modal-actions">
+              <button
+                onClick={() => setCancelModal({ show: false, appointmentId: null })}
+                className="btn btn-outline"
+              >
+                Keep Appointment
+              </button>
+              <button
+                onClick={() => handleCancelAppointment(cancelModal.appointmentId)}
+                className="btn btn-danger"
+              >
+                Cancel Appointment
+              </button>
+            </div>
+          </div>
+        </Modal>
       </div>
     </Layout>
   );
